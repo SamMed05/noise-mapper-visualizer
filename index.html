@@ -24,13 +24,57 @@
         gap: 20px;
         flex-wrap: wrap;
         justify-content: center;
-        max-width: 850px;
+        max-width: 900px;
       }
       .left-panel {
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 15px;
+        position: relative;
+      }
+      .preview-area {
+        position: relative;
+        margin-left: 40px; 
+      }
+      .vertical-sliders {
+        display: flex;
+        gap: 4px;
+        height: 463px;
+        position: absolute;
+        left: -50px;
+        top: 0;
+      }
+      .v-slider-group {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        height: 100%;
+        gap: 5px;
+        width: 18px;
+        justify-content: space-between;
+      }
+      .v-slider-label {
+        font-size: 0.7rem;
+        color: #ddd;
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        transform: rotate(180deg);
+        white-space: nowrap;
+        margin-bottom: 5px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      input[type="range"].vertical {
+        writing-mode: bt-lr;
+        -webkit-appearance: slider-vertical;
+        width: 8px;
+        flex-grow: 1;
+        accent-color: #00d4ff;
+        margin: 0;
+        cursor: pointer;
       }
       #c {
         border: 1px solid #333;
@@ -149,7 +193,19 @@
 
     <div class="container">
       <div class="left-panel">
-        <canvas id="c" width="200" height="200"></canvas>
+        <div class="preview-area">
+          <div class="vertical-sliders">
+            <div class="v-slider-group">
+                <input type="range" id="noiseScale" class="vertical" min="0.005" max="0.1" step="0.001" value="0.02" title="Noise Scale">
+                <span class="v-slider-label">Scale</span>
+            </div>
+            <div class="v-slider-group">
+                <input type="range" id="sliceY" class="vertical" min="0" max="199" step="1" value="100" title="Slice Y" style="accent-color: #888;">
+                <span class="v-slider-label">Slice</span>
+            </div>
+          </div>
+          <canvas id="c" width="200" height="200"></canvas>
+        </div>
 
         <div class="filter-bar">
           <span class="filter-tag">Prefilter:</span>
@@ -303,19 +359,20 @@
       const graphCanvas = document.getElementById("graphCanvas");
       const graphCtx = graphCanvas.getContext("2d");
 
+      // Handle High DPI
+      const dpr = window.devicePixelRatio || 1;
+      const rect = graphCanvas.getBoundingClientRect();
+      const logicalWidth = 850;
+      const logicalHeight = 220; // Increased to match CSS height
+      
+      graphCanvas.width = logicalWidth * dpr;
+      graphCanvas.height = logicalHeight * dpr;
+      graphCtx.scale(dpr, dpr);
+      
+      // Buffers
       const rawData = new Float32Array(200 * 200);
-      for (let y = 0; y < 200; y++) {
-        for (let x = 0; x < 200; x++) {
-          rawData[y * 200 + x] = noise(x * 0.02, y * 0.02);
-        }
-      }
-
-      // Pre-calculate 1D slice for graph
-      const sliceWidth = 850;
+      const sliceWidth = logicalWidth; // Use logical width for Slice
       const sliceData = new Float32Array(sliceWidth);
-      for (let x = 0; x < sliceWidth; x++) {
-        sliceData[x] = noise(x * 0.015, 0);
-      }
 
       function update() {
         const FromMin = parseFloat(document.getElementById("FromMin").value);
@@ -323,13 +380,33 @@
         const ToMin = parseFloat(document.getElementById("ToMin").value);
         const ToMax = parseFloat(document.getElementById("ToMax").value);
         const useAbs = document.getElementById("absToggle").checked;
+        
+        const scale = parseFloat(document.getElementById("noiseScale").value);
+        
+        // Inverse sliceY so slider down = line down
+        const rawSliceY = parseInt(document.getElementById("sliceY").value);
+        const sliceY = 199 - rawSliceY;
 
         document.getElementById("l-FromMin").textContent = FromMin.toFixed(2);
         document.getElementById("l-FromMax").textContent = FromMax.toFixed(2);
         document.getElementById("l-ToMin").textContent = ToMin.toFixed(2);
         document.getElementById("l-ToMax").textContent = ToMax.toFixed(2);
 
-        // Update Map
+        // Regenerate Noise
+        for (let y = 0; y < 200; y++) {
+          for (let x = 0; x < 200; x++) {
+            rawData[y * 200 + x] = noise(x * scale, y * scale);
+          }
+        }
+        
+        // Regenerate Slice Data
+        for (let x = 0; x < sliceWidth; x++) {
+           // map graph x (0..850) to map x (0..200)
+           let mapX = (x / sliceWidth) * 200; 
+           sliceData[x] = noise(mapX * scale, sliceY * scale);
+        }
+
+        // Update Map Image
         const img = ctx.createImageData(200, 200);
         for (let i = 0; i < rawData.length; i++) {
           let val = rawData[i];
@@ -349,13 +426,22 @@
         }
         ctx.putImageData(img, 0, 0);
 
+        // Draw Slice Line on Map
+        ctx.strokeStyle = "rgba(135, 206, 250, 0.8)"; // LightSkyBlue
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, sliceY);
+        ctx.lineTo(200, sliceY);
+        ctx.stroke();
+
         // Update Graph
         drawGraph(FromMin, FromMax, ToMin, ToMax, useAbs);
       }
 
       function drawGraph(fMin, fMax, tMin, tMax, useAbs) {
-        const w = graphCanvas.width;
-        const h = graphCanvas.height;
+        // Use logical dimensions directly
+        const w = logicalWidth;
+        const h = logicalHeight;
         graphCtx.clearRect(0, 0, w, h);
 
         const rangeMin = -3;
