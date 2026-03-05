@@ -32,10 +32,10 @@
         align-items: center;
         gap: 15px;
         position: relative;
+        margin-left: 40px;
       }
       .preview-area {
         position: relative;
-        margin-left: 40px; 
       }
       .vertical-sliders {
         display: flex;
@@ -93,9 +93,9 @@
       }
       .filter-bar {
         display: flex;
-        gap: 20px;
+        gap: 15px;
         background: #1c1f26;
-        padding: 10px 20px;
+        padding: 10px 15px;
         border-radius: 8px;
         border: 1px solid #252932;
         align-items: center;
@@ -103,7 +103,7 @@
       .filter-bar label {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 2px;
         font-size: 0.85rem;
         cursor: pointer;
         color: #aaa;
@@ -146,6 +146,7 @@
         padding: 20px;
         border-radius: 12px;
         width: 360px;
+        box-sizing: border-box;
       }
       .group {
         margin-bottom: 20px;
@@ -186,6 +187,28 @@
         text-align: center;
         line-height: 1.4;
       }
+
+      /* Mobile adjustments */
+      @media (max-width: 600px) {
+        .container {
+          flex-direction: column;
+          align-items: center;
+        }
+        .left-panel {
+          margin-left: 50px; /* Leave space for vertical sliders to avoid pushing off screen */
+        }
+        #c {
+          width: 300px;
+          height: 300px;
+        }
+        .vertical-sliders {
+          height: 363px; /* Adjusted to fit the smaller 300px canvas height + filter bar gap */
+        }
+        .controls {
+          width: 100%;
+          max-width: 350px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -208,8 +231,9 @@
         </div>
 
         <div class="filter-bar">
-          <span class="filter-tag">Prefilter:</span>
+          <span class="filter-tag">Options:</span>
           <label><input type="checkbox" id="absToggle" /> Abs()</label>
+          <label><input type="checkbox" id="splitToggle" checked /> Split View</label>
           <button class="btn-copy" id="copyBtn">Copy JSON</button>
         </div>
       </div>
@@ -465,68 +489,172 @@
           graphCtx.setLineDash([]);
         }
 
-        // Grid 0
-        drawLine(0, "#333");
+        const isSplit = document.getElementById("splitToggle").checked;
 
-        // Mapped Output Curve
-        graphCtx.strokeStyle = "#00ff00";
-        graphCtx.lineWidth = 2;
-        graphCtx.beginPath();
-        for (let x = 0; x < w; x++) {
-          let val = sliceData[x];
-          if (useAbs) val = Math.abs(val);
+        if (isSplit) {
+          const leftW = w * 0.4;
+          const gap = w * 0.2;
+          const rightX = leftW + gap;
+          const rightW = w * 0.4;
 
-          let denom = fMax - fMin;
-          let normalized = denom === 0 ? 0 : (val - fMin) / denom;
-          let mapped = tMin + normalized * (tMax - tMin);
+          function drawSplitLine(val, color, startX, width, dashed = false) {
+            graphCtx.strokeStyle = color;
+            graphCtx.lineWidth = 1;
+            if (dashed) graphCtx.setLineDash([5, 5]);
+            else graphCtx.setLineDash([]);
+            graphCtx.beginPath();
+            graphCtx.moveTo(startX, toY(val));
+            graphCtx.lineTo(startX + width, toY(val));
+            graphCtx.stroke();
+            graphCtx.setLineDash([]);
+          }
 
-          const y = toY(mapped);
-          if (x === 0) graphCtx.moveTo(x, y);
-          else graphCtx.lineTo(x, y);
+          // Grid 0
+          drawSplitLine(0, "#333", 0, leftW);
+          drawSplitLine(0, "#333", rightX, rightW);
+
+          // Box boundaries (optional, subtle)
+          graphCtx.strokeStyle = "#252932";
+          graphCtx.strokeRect(0, 0, leftW, h);
+          graphCtx.strokeRect(rightX, 0, rightW, h);
+
+          // Connect ranges
+          graphCtx.strokeStyle = "#555";
+          graphCtx.setLineDash([3, 3]);
+          graphCtx.beginPath();
+          graphCtx.moveTo(leftW, toY(fMax));
+          graphCtx.lineTo(rightX, toY(tMax));
+          graphCtx.moveTo(leftW, toY(fMin));
+          graphCtx.lineTo(rightX, toY(tMin));
+          graphCtx.stroke();
+          graphCtx.setLineDash([]);
+
+          // Input Noise Curve (Left)
+          graphCtx.strokeStyle = "#666";
+          graphCtx.lineWidth = 2;
+          graphCtx.beginPath();
+          for (let x = 0; x <= leftW; x++) {
+            let dataIdx = Math.floor((x / leftW) * w);
+            if (dataIdx >= w) dataIdx = w - 1;
+            let val = sliceData[dataIdx];
+            if (useAbs) val = Math.abs(val);
+            const y = toY(val);
+            if (x === 0) graphCtx.moveTo(x, y);
+            else graphCtx.lineTo(x, y);
+          }
+          graphCtx.stroke();
+
+          // Mapped Output Curve (Right)
+          graphCtx.strokeStyle = "#00ff00";
+          graphCtx.lineWidth = 2;
+          graphCtx.beginPath();
+          for (let x = 0; x <= rightW; x++) {
+            let dataIdx = Math.floor((x / rightW) * w);
+            if (dataIdx >= w) dataIdx = w - 1;
+            let val = sliceData[dataIdx];
+            if (useAbs) val = Math.abs(val);
+
+            let denom = fMax - fMin;
+            let normalized = denom === 0 ? 0 : (val - fMin) / denom;
+            let mapped = tMin + normalized * (tMax - tMin);
+
+            const y = toY(mapped);
+            if (x === 0) graphCtx.moveTo(rightX + x, y);
+            else graphCtx.lineTo(rightX + x, y);
+          }
+          graphCtx.stroke();
+
+          // Left constraints
+          drawSplitLine(fMin, "#00d4ff", 0, leftW, true);
+          drawSplitLine(fMax, "#0066cc", 0, leftW);
+
+          // Right constraints
+          drawSplitLine(tMin, "#d400ff", rightX, rightW, true);
+          drawSplitLine(tMax, "#ff9900", rightX, rightW);
+
+          // Legends
+          graphCtx.font = "10px sans-serif";
+          function drawLabel(text, val, color, align, boxX, boxW) {
+            graphCtx.fillStyle = color;
+            graphCtx.textAlign = align;
+            let xPos = align === "right" ? boxX + boxW - 5 : boxX + 5;
+            graphCtx.fillText(text, xPos, toY(val) - 4);
+          }
+          
+          drawLabel("FromMin", fMin, "#00d4ff", "left", 0, leftW);
+          drawLabel("FromMax", fMax, "#0066cc", "left", 0, leftW);
+          drawLabel("ToMin", tMin, "#d400ff", "right", rightX, rightW);
+          drawLabel("ToMax", tMax, "#ff9900", "right", rightX, rightW);
+
+          graphCtx.textAlign = "center";
+          graphCtx.fillStyle = "#666";
+          graphCtx.fillText("Input", leftW / 2, h - 10);
+          graphCtx.fillStyle = "#00ff00";
+          graphCtx.fillText("Output", rightX + rightW / 2, h - 10);
+        } else {
+          // Grid 0
+          drawLine(0, "#333");
+
+          // Mapped Output Curve
+          graphCtx.strokeStyle = "#00ff00";
+          graphCtx.lineWidth = 2;
+          graphCtx.beginPath();
+          for (let x = 0; x < w; x++) {
+            let val = sliceData[x];
+            if (useAbs) val = Math.abs(val);
+
+            let denom = fMax - fMin;
+            let normalized = denom === 0 ? 0 : (val - fMin) / denom;
+            let mapped = tMin + normalized * (tMax - tMin);
+
+            const y = toY(mapped);
+            if (x === 0) graphCtx.moveTo(x, y);
+            else graphCtx.lineTo(x, y);
+          }
+          graphCtx.stroke();
+
+          // Input Thresholds
+          drawLine(fMin, "#00d4ff", true);
+          drawLine(fMax, "#0066cc");
+
+          // Output Thresholds
+          drawLine(tMin, "#d400ff", true);
+          drawLine(tMax, "#ff9900");
+
+          // Input Noise Curve
+          graphCtx.strokeStyle = "#666";
+          graphCtx.lineWidth = 2;
+          graphCtx.beginPath();
+          for (let x = 0; x < w; x++) {
+            let val = sliceData[x];
+            if (useAbs) val = Math.abs(val);
+            const y = toY(val);
+            if (x === 0) graphCtx.moveTo(x, y);
+            else graphCtx.lineTo(x, y);
+          }
+          graphCtx.stroke();
+
+          // Legends
+          graphCtx.font = "10px sans-serif";
+
+          function drawLabel(text, val, color, align = "left") {
+            graphCtx.fillStyle = color;
+            graphCtx.textAlign = align;
+            let xPos = align === "right" ? w - 5 : 5;
+            graphCtx.fillText(text, xPos, toY(val) - 4);
+          }
+
+          drawLabel("FromMin", fMin, "#00d4ff");
+          drawLabel("FromMax", fMax, "#0066cc");
+          drawLabel("ToMin", tMin, "#d400ff", "right");
+          drawLabel("ToMax", tMax, "#ff9900", "right");
+
+          graphCtx.textAlign = "left";
+          graphCtx.fillStyle = "#00ff00";
+          graphCtx.fillText("Output", w / 2, h - 10);
+          graphCtx.fillStyle = "#666";
+          graphCtx.fillText("Input", w / 2, h - 25);
         }
-        graphCtx.stroke();
-
-        // Input Thresholds
-        drawLine(fMin, "#00d4ff", true);
-        drawLine(fMax, "#0066cc");
-
-        // Output Thresholds
-        drawLine(tMin, "#d400ff", true);
-        drawLine(tMax, "#ff9900");
-
-        // Input Noise Curve
-        graphCtx.strokeStyle = "#666";
-        graphCtx.lineWidth = 2;
-        graphCtx.beginPath();
-        for (let x = 0; x < w; x++) {
-          let val = sliceData[x];
-          if (useAbs) val = Math.abs(val);
-          const y = toY(val);
-          if (x === 0) graphCtx.moveTo(x, y);
-          else graphCtx.lineTo(x, y);
-        }
-        graphCtx.stroke();
-
-        // Legends
-        graphCtx.font = "10px sans-serif";
-
-        function drawLabel(text, val, color, align = "left") {
-          graphCtx.fillStyle = color;
-          graphCtx.textAlign = align;
-          let xPos = align === "right" ? w - 5 : 5;
-          graphCtx.fillText(text, xPos, toY(val) - 4);
-        }
-
-        drawLabel("FromMin", fMin, "#00d4ff");
-        drawLabel("FromMax", fMax, "#0066cc");
-        drawLabel("ToMin", tMin, "#d400ff", "right");
-        drawLabel("ToMax", tMax, "#ff9900", "right");
-
-        graphCtx.textAlign = "left";
-        graphCtx.fillStyle = "#00ff00";
-        graphCtx.fillText("Output", w / 2, h - 10);
-        graphCtx.fillStyle = "#666";
-        graphCtx.fillText("Input", w / 2, h - 25);
       }
 
       // Copy functionality
@@ -562,6 +690,156 @@
           }, 1500);
         });
       }
+
+      // Interaction variables
+      let isDragging = null;
+      const HIT_TEST_MARGIN = 15;
+
+      graphCanvas.addEventListener("mousedown", (e) => {
+        const rect = graphCanvas.getBoundingClientRect();
+        const scaleY = logicalHeight / rect.height;
+        const scaleX = logicalWidth / rect.width;
+        const px = (e.clientX - rect.left) * scaleX;
+        const py = (e.clientY - rect.top) * scaleY;
+
+        const FromMin = parseFloat(document.getElementById("FromMin").value);
+        const FromMax = parseFloat(document.getElementById("FromMax").value);
+        const ToMin = parseFloat(document.getElementById("ToMin").value);
+        const ToMax = parseFloat(document.getElementById("ToMax").value);
+
+        const rangeMin = -3;
+        const rangeMax = 3;
+        const rangeH = rangeMax - rangeMin;
+
+        function toY(val) {
+          return logicalHeight - ((val - rangeMin) / rangeH) * logicalHeight;
+        }
+
+        let candidates = [];
+        const isSplit = document.getElementById("splitToggle").checked;
+
+        if (isSplit) {
+          if (px < logicalWidth * 0.4) {
+            candidates.push({ id: "FromMin", y: toY(FromMin) });
+            candidates.push({ id: "FromMax", y: toY(FromMax) });
+          } else if (px > logicalWidth * 0.6) {
+            candidates.push({ id: "ToMin", y: toY(ToMin) });
+            candidates.push({ id: "ToMax", y: toY(ToMax) });
+          } else {
+            if (px < logicalWidth / 2) {
+              candidates.push({ id: "FromMin", y: toY(FromMin) });
+              candidates.push({ id: "FromMax", y: toY(FromMax) });
+            } else {
+              candidates.push({ id: "ToMin", y: toY(ToMin) });
+              candidates.push({ id: "ToMax", y: toY(ToMax) });
+            }
+          }
+        } else {
+          if (px < logicalWidth / 2) {
+            candidates.push({ id: "FromMin", y: toY(FromMin) });
+            candidates.push({ id: "FromMax", y: toY(FromMax) });
+          } else {
+            candidates.push({ id: "ToMin", y: toY(ToMin) });
+            candidates.push({ id: "ToMax", y: toY(ToMax) });
+          }
+        }
+
+        let closestDist = HIT_TEST_MARGIN;
+        let closestId = null;
+        for (let c of candidates) {
+          let dist = Math.abs(c.y - py);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestId = c.id;
+          }
+        }
+
+        if (closestId) {
+          isDragging = closestId;
+        }
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        const rect = graphCanvas.getBoundingClientRect();
+        const scaleY = logicalHeight / rect.height;
+        const scaleX = logicalWidth / rect.width;
+        const px = (e.clientX - rect.left) * scaleX;
+        const py = (e.clientY - rect.top) * scaleY;
+
+        const rangeMin = -3;
+        const rangeMax = 3;
+        const rangeH = rangeMax - rangeMin;
+
+        function toY(val) {
+          return logicalHeight - ((val - rangeMin) / rangeH) * logicalHeight;
+        }
+
+        if (isDragging) {
+          let val = rangeMin + ((logicalHeight - py) / logicalHeight) * rangeH;
+          if (val < rangeMin) val = rangeMin;
+          if (val > rangeMax) val = rangeMax;
+          val = Math.round(val * 100) / 100;
+          document.getElementById(isDragging).value = val;
+          update();
+          graphCanvas.style.cursor = "ns-resize";
+          return;
+        }
+
+        // Hover logic for cursor
+        const FromMin = parseFloat(document.getElementById("FromMin").value);
+        const FromMax = parseFloat(document.getElementById("FromMax").value);
+        const ToMin = parseFloat(document.getElementById("ToMin").value);
+        const ToMax = parseFloat(document.getElementById("ToMax").value);
+
+        let candidates = [];
+        const isSplit = document.getElementById("splitToggle").checked;
+
+        if (isSplit) {
+          if (px < logicalWidth * 0.4) {
+            candidates.push({ id: "FromMin", y: toY(FromMin) });
+            candidates.push({ id: "FromMax", y: toY(FromMax) });
+          } else if (px > logicalWidth * 0.6) {
+            candidates.push({ id: "ToMin", y: toY(ToMin) });
+            candidates.push({ id: "ToMax", y: toY(ToMax) });
+          } else {
+            if (px < logicalWidth / 2) {
+              candidates.push({ id: "FromMin", y: toY(FromMin) });
+              candidates.push({ id: "FromMax", y: toY(FromMax) });
+            } else {
+              candidates.push({ id: "ToMin", y: toY(ToMin) });
+              candidates.push({ id: "ToMax", y: toY(ToMax) });
+            }
+          }
+        } else {
+          if (px < logicalWidth / 2) {
+            candidates.push({ id: "FromMin", y: toY(FromMin) });
+            candidates.push({ id: "FromMax", y: toY(FromMax) });
+          } else {
+            candidates.push({ id: "ToMin", y: toY(ToMin) });
+            candidates.push({ id: "ToMax", y: toY(ToMax) });
+          }
+        }
+
+        let closestDist = HIT_TEST_MARGIN;
+        let closestId = null;
+        for (let c of candidates) {
+          let dist = Math.abs(c.y - py);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestId = c.id;
+          }
+        }
+
+        if (closestId) {
+          graphCanvas.style.cursor = "ns-resize";
+        } else {
+          graphCanvas.style.cursor = "default";
+        }
+      });
+
+      window.addEventListener("mouseup", () => {
+        isDragging = null;
+      });
 
       document
         .querySelectorAll("input")
